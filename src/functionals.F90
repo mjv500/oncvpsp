@@ -1,6 +1,7 @@
 
 !! Taken from Octopus (2002-2006 M. Marques, A. Castro, A. Rubio, G. Bertsch)
 !! Adapted to oncvpsp by A. Castaneda M. (2019)
+!! updated for libxc 5.1 by M Verstraete (2021)
 !!
 !! This program is free software; you can redistribute it and/or modify
 !! it under the terms of the GNU General Public License as published by
@@ -89,7 +90,8 @@ end module xc_messages
 module functionals_m
   use parser
   use xc_messages
-  use xc_f90_lib_m !libxc
+  use xc_f03_lib_m !libxc
+  use iso_c_binding
 
   implicit none
 
@@ -112,14 +114,14 @@ module functionals_m
      integer         :: type              !< exchange, correlation, or exchange-correlation
      integer         :: id                !< identifier
 
-     integer         :: nspin     !< XC_UNPOLARIZED | XC_POLARIZED
+     integer         :: nspin             !< XC_UNPOLARIZED | XC_POLARIZED
      integer         :: flags             !< XC_FLAGS_HAVE_EXC + XC_FLAGS_HAVE_VXC + ...
 
-     type(xc_f90_pointer_t) :: conf         !< the pointer used to call the library
-     type(xc_f90_pointer_t) :: info         !< information about the functional
+     type(xc_f03_func_t)      :: conf              !< the pointer used to call the library
+     type(xc_f03_func_info_t) :: info              !< information about the functional
 
      integer         :: LB94_modified     !< should I use a special version of LB94 that
-     real(8)           :: LB94_threshold    !< needs to be handled specially
+     real(8)         :: LB94_threshold    !< needs to be handled specially
 
      integer  :: deriv_method
   end type xc_functl_t
@@ -167,7 +169,7 @@ contains
        functl%family = XC_FAMILY_NONE
     else
        ! get the family of the functional
-       functl%family = xc_f90_family_from_id(functl%id)
+       functl%family = xc_f03_func_info_get_family(functl%info) !_from_id
        ! this also ensures it is actually a functional defined by the linked version of libxc
 
        if(functl%family == XC_FAMILY_UNKNOWN) then
@@ -183,9 +185,9 @@ contains
        functl%flags = 0
     else ! handled by libxc
        ! initialize
-       call xc_f90_func_init(functl%conf, functl%info, functl%id, nspin)
-       functl%type     = xc_f90_info_kind(functl%info)
-       functl%flags    = xc_f90_info_flags(functl%info)
+       call xc_f03_func_init(functl%conf, functl%id, nspin)
+       functl%type     = xc_f03_func_info_get_kind(functl%info)
+       functl%flags    = xc_f03_func_info_get_flags(functl%info)
 
        ! FIXME: no need to say this for kernel
        if(iand(functl%flags, XC_FLAGS_HAVE_EXC) == 0) then
@@ -214,7 +216,7 @@ contains
        call parse_variable(1.0d0, alpha)
 #if LIBXC_VERSION>=400
        parameters(1) = alpha
-       call xc_f90_func_set_ext_params(functl%conf, parameters(1))
+       call xc_f03_func_set_ext_params(functl%conf, parameters(1))
 #else
        call xc_f90_lda_c_xalpha_set_par(functl%conf, alpha)
 #endif
@@ -241,7 +243,7 @@ contains
 
 
     if(functl%family /= XC_FAMILY_NONE .and. functl%family /= XC_FAMILY_OEP)  then
-       call xc_f90_func_end(functl%conf)
+       call xc_f03_func_end(functl%conf)
     end if
 
   end subroutine xc_functl_end
@@ -255,7 +257,8 @@ contains
     character(len=1000) :: s1, s2
     integer :: ii
 #if LIBXC_VERSION>=300
-    type(xc_f90_pointer_t) :: str
+    type(c_ptr) :: str
+    type(xc_f03_func_reference_t) :: xc_ref
 #endif
 
 
@@ -274,20 +277,21 @@ contains
           call messages_fatal(1)
        end select
 
-       call xc_f90_info_name(functl%info, s1)
+       s1 = xc_f03_func_info_get_name(functl%info)
        select case(functl%family)
        case (XC_FAMILY_LDA);       write(s2,'(a)') "LDA"
        case (XC_FAMILY_GGA);       write(s2,'(a)') "GGA"
-       case (XC_FAMILY_HYB_GGA);   write(s2,'(a)') "Hybrid GGA"
-       case (XC_FAMILY_HYB_MGGA);  write(s2,'(a)') "Hybrid MGGA"
        case (XC_FAMILY_MGGA);      write(s2,'(a)') "MGGA"
+       case (XC_FAMILY_LCA);       write(s2,'(a)') "LCA"
+       case (XC_FAMILY_OEP);       write(s2,'(a)') "OEP"
        end select
        write(message(2), '(4x,4a)') trim(s1), ' (', trim(s2), ')'
        call messages_info(2, iunit)
 
        ii = 0
 #if LIBXC_VERSION>=300
-       call xc_f90_info_refs(functl%info, ii, s1)
+       xc_ref = xc_f03_func_info_get_references(functl%info, ii)
+       s1 = xc_f03_func_reference_get_ref(xc_ref)
 #else
        call xc_f90_info_refs(functl%info, ii, str, s1)
 #endif
@@ -295,7 +299,8 @@ contains
           write(message(1), '(4x,a,i1,2a)') '[', ii, '] ', trim(s1)
           call messages_info(1, iunit)
 #if LIBXC_VERSION>=300
-          call xc_f90_info_refs(functl%info, ii, s1)
+          xc_ref = xc_f03_func_info_get_references(functl%info, ii)
+          s1 = xc_f03_func_reference_get_ref(xc_ref)
 #else
           call xc_f90_info_refs(functl%info, ii, str, s1)
 #endif
@@ -334,6 +339,7 @@ contains
     real(8),           intent(out)   :: vtau(np, functl%nspin)
 
     integer  :: i, is, nspin
+    integer(c_size_t) :: xc_np
     real(8) :: a, b, c
     real(8), parameter   :: alpha = -0.012d0, beta = 1.023d0
 
@@ -379,7 +385,7 @@ contains
        end if
 #if LIBXC_VERSION>=400
        parameters(1) = c
-       call xc_f90_func_set_ext_params(functl%conf, parameters(1))
+       call xc_f03_func_set_ext_params(functl%conf, parameters(1))
 #else
        call xc_f90_mgga_x_tb09_set_par(functl%conf, c)
 #endif
@@ -469,15 +475,15 @@ contains
           l(1:nspin) = rho_lapl(i, 1:nspin)
        end if
 
-       if (iand(xc_f90_info_flags(functl%info), XC_FLAGS_HAVE_EXC) .ne. 0) then
+       if (iand(xc_f03_func_info_get_flags(functl%info), XC_FLAGS_HAVE_EXC) .ne. 0) then
 
           select case(functl%family)
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_exc_vxc(functl%conf, 1, n(1), e(i), dedn(1))
+             call xc_f03_lda_exc_vxc(functl%conf, xc_np, n(1), e(i), dedn(1))
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_exc_vxc(functl%conf, 1, n(1), s(1), e(i), dedn(1), deds(1))
+             call xc_f03_gga_exc_vxc(functl%conf, xc_np, n(1), s(1), e(i), dedn(1), deds(1))
           case(XC_FAMILY_MGGA)
-             call xc_f90_mgga_exc_vxc(functl%conf, 1, n(1), s(1), l(1), t(1), e(i), &
+             call xc_f03_mgga_exc_vxc(functl%conf, xc_np, n(1), s(1), l(1), t(1), e(i), &
                   dedn(1), deds(1), dedl(1), dedt(1))
           end select
 
@@ -485,11 +491,11 @@ contains
 
           select case(functl%family)
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_vxc(functl%conf, 1, n(1), dedn(1))
+             call xc_f03_lda_vxc(functl%conf, xc_np, n(1), dedn(1))
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_vxc(functl%conf, 1, n(1), s(1), dedn(1), deds(1))
+             call xc_f03_gga_vxc(functl%conf, xc_np, n(1), s(1), dedn(1), deds(1))
           case(XC_FAMILY_MGGA)
-             call xc_f90_mgga_vxc(functl%conf, 1, n(1), s(1), l(1), t(1), &
+             call xc_f03_mgga_vxc(functl%conf, xc_np, n(1), s(1), l(1), t(1), &
                   dedn(1), deds(1), dedl(1), dedt(1))
           end select
           e(i) =0.0d0
@@ -519,7 +525,7 @@ contains
        if (functl%deriv_method == XC_DERIV_ANALYTICAL) then
           !Evaluate second-order derivatives
           if (functl%family == XC_FAMILY_GGA .or. functl%family == XC_FAMILY_MGGA) then
-             call xc_f90_gga_fxc(functl%conf, 1, n(1), s(1), d2edn2(1), d2ednds(1), d2eds2(1))
+             call xc_f03_gga_fxc(functl%conf, xc_np, n(1), s(1), d2edn2(1), d2ednds(1), d2eds2(1))
 
              if (nspin == 1) then
                 d2edrhodgrad(i, 1) = 2.0d0*rho_grad(i, 1)*d2ednds(1)
@@ -655,9 +661,12 @@ contains
     real(8),           intent(out) :: tau(np, functl%nspin)
 
     integer  :: i, is, nspin
+    integer(c_size_t) :: xc_np
     real(8), allocatable :: n(:), s(:), l(:), t(:)
 
     nspin = functl%nspin
+
+    xc_np=1
 
     !Allocate work arrays
     allocate(n(nspin), t(nspin))
@@ -695,9 +704,9 @@ contains
 
         select case(functl%family)
         case(XC_FAMILY_LDA)
-          call xc_f90_lda_exc(functl%conf, 1, n(1), t(1))
+          call xc_f03_lda_exc(functl%conf, xc_np, n(1), t(1))
         case(XC_FAMILY_GGA)
-          call xc_f90_gga_exc(functl%conf, 1, n(1), s(1), t(1))
+          call xc_f03_gga_exc(functl%conf, xc_np, n(1), s(1), t(1))
         end select
 
 #if LIBXC_VERSION >= 200
