@@ -21,4 +21,4 @@ drh_*
 tests/data/*.out
 tests/data/*.diff
 tests/data/TEST.report
-tests/refs/*
+#tests/refs/*
