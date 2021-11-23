@@ -98,6 +98,8 @@ module functionals_m
   ! Parameters
   integer, parameter :: iunit = 6
   real(8), parameter :: pi = 3.141592653589793238462643383279502884197d0
+  integer(c_size_t), parameter, private :: xc_one = 1
+
 
   private
   public ::                     &
@@ -110,9 +112,9 @@ module functionals_m
   integer, public, parameter :: XC_DERIV_NUMERICAL = 1,XC_DERIV_ANALYTICAL = 2
 
   type xc_functl_t
-     integer         :: family            !< LDA, GGA, etc.
-     integer         :: type              !< exchange, correlation, or exchange-correlation
-     integer         :: id                !< identifier
+     integer(c_int)  :: family            !< LDA, GGA, etc.
+     integer(c_int)  :: type              !< exchange, correlation, or exchange-correlation
+     integer(c_int)  :: id                !< identifier
 
      integer         :: nspin             !< XC_UNPOLARIZED | XC_POLARIZED
      integer         :: flags             !< XC_FLAGS_HAVE_EXC + XC_FLAGS_HAVE_VXC + ...
@@ -169,7 +171,7 @@ contains
        functl%family = XC_FAMILY_NONE
     else
        ! get the family of the functional
-       functl%family = xc_f03_func_info_get_family(functl%info) !_from_id
+       functl%family = xc_f03_family_from_id(id)
        ! this also ensures it is actually a functional defined by the linked version of libxc
 
        if(functl%family == XC_FAMILY_UNKNOWN) then
@@ -186,6 +188,7 @@ contains
     else ! handled by libxc
        ! initialize
        call xc_f03_func_init(functl%conf, functl%id, nspin)
+       functl%info     = xc_f03_func_get_info(functl%conf)
        functl%type     = xc_f03_func_info_get_kind(functl%info)
        functl%flags    = xc_f03_func_info_get_flags(functl%info)
 
@@ -339,7 +342,6 @@ contains
     real(8),           intent(out)   :: vtau(np, functl%nspin)
 
     integer  :: i, is, nspin
-    integer(c_size_t) :: xc_np
     real(8) :: a, b, c
     real(8), parameter   :: alpha = -0.012d0, beta = 1.023d0
 
@@ -479,11 +481,11 @@ contains
 
           select case(functl%family)
           case(XC_FAMILY_LDA)
-             call xc_f03_lda_exc_vxc(functl%conf, xc_np, n(1), e(i), dedn(1))
+             call xc_f03_lda_exc_vxc(functl%conf, xc_one, n(1), e(i), dedn(1))
           case(XC_FAMILY_GGA)
-             call xc_f03_gga_exc_vxc(functl%conf, xc_np, n(1), s(1), e(i), dedn(1), deds(1))
+             call xc_f03_gga_exc_vxc(functl%conf, xc_one, n(1), s(1), e(i), dedn(1), deds(1))
           case(XC_FAMILY_MGGA)
-             call xc_f03_mgga_exc_vxc(functl%conf, xc_np, n(1), s(1), l(1), t(1), e(i), &
+             call xc_f03_mgga_exc_vxc(functl%conf, xc_one, n(1), s(1), l(1), t(1), e(i), &
                   dedn(1), deds(1), dedl(1), dedt(1))
           end select
 
@@ -491,11 +493,11 @@ contains
 
           select case(functl%family)
           case(XC_FAMILY_LDA)
-             call xc_f03_lda_vxc(functl%conf, xc_np, n(1), dedn(1))
+             call xc_f03_lda_vxc(functl%conf, xc_one, n(1), dedn(1))
           case(XC_FAMILY_GGA)
-             call xc_f03_gga_vxc(functl%conf, xc_np, n(1), s(1), dedn(1), deds(1))
+             call xc_f03_gga_vxc(functl%conf, xc_one, n(1), s(1), dedn(1), deds(1))
           case(XC_FAMILY_MGGA)
-             call xc_f03_mgga_vxc(functl%conf, xc_np, n(1), s(1), l(1), t(1), &
+             call xc_f03_mgga_vxc(functl%conf, xc_one, n(1), s(1), l(1), t(1), &
                   dedn(1), deds(1), dedl(1), dedt(1))
           end select
           e(i) =0.0d0
@@ -525,7 +527,7 @@ contains
        if (functl%deriv_method == XC_DERIV_ANALYTICAL) then
           !Evaluate second-order derivatives
           if (functl%family == XC_FAMILY_GGA .or. functl%family == XC_FAMILY_MGGA) then
-             call xc_f03_gga_fxc(functl%conf, xc_np, n(1), s(1), d2edn2(1), d2ednds(1), d2eds2(1))
+             call xc_f03_gga_fxc(functl%conf, xc_one, n(1), s(1), d2edn2(1), d2ednds(1), d2eds2(1))
 
              if (nspin == 1) then
                 d2edrhodgrad(i, 1) = 2.0d0*rho_grad(i, 1)*d2ednds(1)
@@ -661,12 +663,10 @@ contains
     real(8),           intent(out) :: tau(np, functl%nspin)
 
     integer  :: i, is, nspin
-    integer(c_size_t) :: xc_np
     real(8), allocatable :: n(:), s(:), l(:), t(:)
 
     nspin = functl%nspin
 
-    xc_np=1
 
     !Allocate work arrays
     allocate(n(nspin), t(nspin))
@@ -704,9 +704,9 @@ contains
 
         select case(functl%family)
         case(XC_FAMILY_LDA)
-          call xc_f03_lda_exc(functl%conf, xc_np, n(1), t(1))
+          call xc_f03_lda_exc(functl%conf, xc_one, n(1), t(1))
         case(XC_FAMILY_GGA)
-          call xc_f03_gga_exc(functl%conf, xc_np, n(1), s(1), t(1))
+          call xc_f03_gga_exc(functl%conf, xc_one, n(1), s(1), t(1))
         end select
 
 #if LIBXC_VERSION >= 200
