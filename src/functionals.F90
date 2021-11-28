@@ -92,6 +92,7 @@ module functionals_m
   use xc_messages
   use xc_f03_lib_m !libxc
   use iso_c_binding
+#include "xc_version.h"
 
   implicit none
 
@@ -163,7 +164,7 @@ contains
     ! initialize structure
     call xc_functl_init(functl, nspin, deriv_method)
 
-#if LIBXC_VERSION<600
+#if XC_MAJOR_VERSION<6
     call messages_input_error('XCFunctional', 'old LibXC versions before 6.0.0 no longer supported')
 #endif
 
