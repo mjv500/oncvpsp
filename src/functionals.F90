@@ -90,6 +90,7 @@ module functionals_m
   use xc_messages
   use xc_f90_lib_m !libxc
   use iso_c_binding
+#include "xc_version.h"
 
   implicit none
 
@@ -156,8 +157,8 @@ contains
     real(8)   :: parameters(2)
     logical :: ok, lb94_modified
 
-#if LIBXC_VERSION<510
-    call messages_input_error('LibXC version', 'at least v6.0.0 is now required')
+#if XC_MAJOR_VERSION<5
+    call messages_input_error('LibXC version', 'at least v5 is now required')
 #endif
 
     ! initialize structure
