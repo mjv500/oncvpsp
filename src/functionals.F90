@@ -156,14 +156,16 @@ contains
     integer,           intent(in)  :: deriv_method
 
     real(8)   :: alpha
-#if LIBXC_VERSION>=400
     real(8)   :: parameters(2)
-#endif
     logical :: ok, lb94_modified
 
 
     ! initialize structure
     call xc_functl_init(functl, nspin, deriv_method)
+
+#if LIBXC_VERSION<600
+    call messages_input_error('XCFunctional', 'old LibXC versions before 6.0.0 no longer supported')
+#endif
 
     functl%id = id
 
@@ -217,12 +219,8 @@ contains
        ! Variable Xalpha
        ! The parameter of the Slater X<math>\alpha</math> functional
        call parse_variable(1.0d0, alpha)
-#if LIBXC_VERSION>=400
        parameters(1) = alpha
        call xc_f03_func_set_ext_params(functl%conf, parameters(1))
-#else
-       call xc_f90_lda_c_xalpha_set_par(functl%conf, alpha)
-#endif
     case(XC_GGA_X_LB)
        ! FIXME: libxc has XC_GGA_X_LBM, isn`t that the modified one?
        ! Whether to use a modified form of the LB94 functional
@@ -259,10 +257,8 @@ contains
 
     character(len=1000) :: s1, s2
     integer :: ii
-#if LIBXC_VERSION>=300
     type(c_ptr) :: str
     type(xc_f03_func_reference_t) :: xc_ref
-#endif
 
 
     if(functl%family /= XC_FAMILY_NONE) then ! all the other families
@@ -292,21 +288,13 @@ contains
        call messages_info(2, iunit)
 
        ii = 0
-#if LIBXC_VERSION>=300
        xc_ref = xc_f03_func_info_get_references(functl%info, ii)
        s1 = xc_f03_func_reference_get_ref(xc_ref)
-#else
-       call xc_f90_info_refs(functl%info, ii, str, s1)
-#endif
        do while(ii >= 0)
           write(message(1), '(4x,a,i1,2a)') '[', ii, '] ', trim(s1)
           call messages_info(1, iunit)
-#if LIBXC_VERSION>=300
           xc_ref = xc_f03_func_info_get_references(functl%info, ii)
           s1 = xc_f03_func_reference_get_ref(xc_ref)
-#else
-          call xc_f90_info_refs(functl%info, ii, str, s1)
-#endif
        end do
     end if
   end subroutine xc_functl_write_info
@@ -385,12 +373,8 @@ contains
              a = b
           end do
        end if
-#if LIBXC_VERSION>=400
        parameters(1) = c
        call xc_f03_func_set_ext_params(functl%conf, parameters(1))
-#else
-       call xc_f90_mgga_x_tb09_set_par(functl%conf, c)
-#endif
     end if
 
 
@@ -469,11 +453,7 @@ contains
           end if
        end if
        if (functl%family == XC_FAMILY_MGGA) then
-#if LIBXC_VERSION >= 200
           t(1:nspin) = tau(i, 1:nspin)/2.0d0
-#else
-          t(1:nspin) = tau(i, 1:nspin)
-#endif
           l(1:nspin) = rho_lapl(i, 1:nspin)
        end if
 
@@ -517,11 +497,7 @@ contains
 
        if(functl%family == XC_FAMILY_MGGA) then
           dedlapl(i, 1:nspin) = dedl(1:nspin)
-#if LIBXC_VERSION >= 200
           dedtau(i, 1:nspin) = dedt(1:nspin)/2.0d0
-#else
-          dedtau(i, 1:nspin) = dedt(1:nspin)
-#endif
        end if
 
        if (functl%deriv_method == XC_DERIV_ANALYTICAL) then
@@ -600,10 +576,8 @@ contains
           a = sqrt(5.0d0/6.0d0)/pi
        case (XC_MGGA_X_TB09)
           a = (3.0d0*c - 2.0d0)*sqrt(5.0d0/6.0d0)/pi
-#if LIBXC_VERSION >= 210
        case (XC_GGA_X_AK13)
           a = sqrt(2.0d0)*(1.0d0/(54.0d0*pi) + 2.0d0/15.0d0)
-#endif
        case default
           a =0.0d0
        end select
@@ -709,11 +683,7 @@ contains
           call xc_f03_gga_exc(functl%conf, xc_one, n(1), s(1), t(1))
         end select
 
-#if LIBXC_VERSION >= 200
         tau(i, is) = 2.0d0*t(1)*n(is)
-#else
-        tau(i, is) = t(1)*n(is)
-#endif
       end do
     end do
 
