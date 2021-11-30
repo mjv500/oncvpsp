@@ -114,14 +114,14 @@ module functionals_m
      integer         :: type              !< exchange, correlation, or exchange-correlation
      integer         :: id                !< identifier
 
-     integer         :: nspin     !< XC_UNPOLARIZED | XC_POLARIZED
+     integer         :: nspin             !< XC_UNPOLARIZED | XC_POLARIZED
      integer         :: flags             !< XC_FLAGS_HAVE_EXC + XC_FLAGS_HAVE_VXC + ...
 
-     type(xc_f90_func_t) :: conf         !< the pointer used to call the library
-     type(xc_f90_func_info_t) :: info         !< information about the functional
+     type(xc_f90_func_t) :: conf          !< the pointer used to call the library
+     type(xc_f90_func_info_t) :: info     !< information about the functional
 
      integer         :: LB94_modified     !< should I use a special version of LB94 that
-     real(8)           :: LB94_threshold    !< needs to be handled specially
+     real(8)         :: LB94_threshold    !< needs to be handled specially
 
      integer  :: deriv_method
   end type xc_functl_t
